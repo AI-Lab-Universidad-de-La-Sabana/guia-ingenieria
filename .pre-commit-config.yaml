@@ -1,0 +1,36 @@
+# Hooks de git: se activan con `make setup`. En GitHub Free son la primera barrera que protege `main`.
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: ["--branch", "main"]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+
+  - repo: local
+    hooks:
+      - id: validar-guia
+        name: validar reglas, anclas y enlaces de la guía
+        language: system
+        entry: python3 scripts/validar_guia.py
+        files: ^(README\.md|scripts/validar_guia\.py)$
+        pass_filenames: false
+      - id: bloquear-push-main
+        name: bloquear push directo a main
+        language: system
+        entry: bash .github/scripts/bloquear-push-main.sh
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false

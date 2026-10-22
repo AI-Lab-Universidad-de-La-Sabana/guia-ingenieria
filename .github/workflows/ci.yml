@@ -1,0 +1,59 @@
+# CI del repositorio de la guía. Un solo job para ahorrar minutos de GitHub Free.
+# Las acciones están fijadas por SHA.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read # auditoría de main: leer PR y aprobaciones
+      issues: write # auditoría de main: abrir un issue si algo no siguió el flujo
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Convenciones (nombre de rama y título del PR)
+        if: github.event_name == 'pull_request'
+        env:
+          RAMA: ${{ github.head_ref }}
+          TITULO: ${{ github.event.pull_request.title }}
+        run: bash .github/scripts/validar-convenciones.sh "$RAMA" "$TITULO"
+
+      - name: Secretos (gitleaks)
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tgz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tgz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --redact --verbose .
+
+      - name: make check (reglas, anclas y enlaces de la guía)
+        run: make check
+
+      # GitHub Free no protege `main` en repositorios privados: se verifica después de cada push.
+      - name: Auditoría de main
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/auditar-main.sh
